@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:security="http://www.springframework.org/schema/security"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+          http://www.springframework.org/schema/beans/spring-beans-4.1.xsd
+          http://www.springframework.org/schema/security
+          http://www.springframework.org/schema/security/spring-security-4.1.xsd">
+
+    <security:authentication-manager />
+
+    <!-- security configuration -->
+    <bean id="roleAdminAuthGenerator" class="ru.maratk.security.RoleAdminAuthGenerator" />
+
+    <!-- entry point -->
+    <bean id="noEntryPoint" class="org.pac4j.springframework.security.web.Pac4jEntryPoint" />
+
+    <!-- SAML security filter -->
+    <bean id="samlSecurityFilter" class="org.pac4j.springframework.security.web.SecurityFilter">
+        <property name="config" ref="config" />
+        <property name="clients" value="Saml2Client" />
+    </bean>
+
+    <!-- SAML security filter interceptors -->
+    <security:http create-session="always" pattern="/secured/**" entry-point-ref="noEntryPoint">
+        <security:custom-filter position="BASIC_AUTH_FILTER" ref="samlSecurityFilter" />
+        <security:intercept-url pattern="/secured/**" access="isAuthenticated()" />
+    </security:http>
+
+    <!-- SAML client config -->
+    <bean id="samlConfig" class="org.pac4j.saml.client.SAML2ClientConfiguration">
+        <property name="keystorePath" value="resource:samlKeystore.jks" />
+        <property name="keystorePassword" value="pac4j-demo-passwd" />
+        <property name="privateKeyPassword" value="pac4j-demo-passwd" />
+        <property name="identityProviderMetadataPath" value="resource:metadata-keycloak.xml" />
+        <property name="maximumAuthenticationLifetime" value="3600" />
+        <property name="serviceProviderEntityId" value="http://localhost:8080/pac4j-spring-keycloak/callback?client_name=SAML2Client" />
+        <property name="serviceProviderMetadataPath" value="sp-metadata.xml" />
+    </bean>
+
+    <!-- SAML client -->
+    <bean id="samlClient" class="org.pac4j.saml.client.SAML2Client">
+        <constructor-arg name="configuration" ref="samlConfig" />
+        <property name="authorizationGenerator" ref="roleAdminAuthGenerator" />
+    </bean>
+
+    <!-- Anonymous client -->
+    <bean id="anonymousClient" class="org.pac4j.core.client.direct.AnonymousClient" />
+
+    <!-- Pac4J clients -->
+    <bean id="clients" class="org.pac4j.core.client.Clients">
+        <property name="callbackUrl" value="http://localhost:8080/pac4j-spring-keycloak/callback" />
+        <property name="clients">
+            <list>
+                <ref bean="samlClient" />
+                <ref bean="anonymousClient" />
+            </list>
+        </property>
+    </bean>
+
+    <!-- Pac4j config -->
+    <bean id="config" class="org.pac4j.core.config.Config">
+        <property name="clients" ref="clients" />
+        <property name="authorizers">
+            <map>
+                <entry key="custom">
+                    <bean class="ru.maratk.security.CustomAuthorizer" />
+                </entry>
+            </map>
+        </property>
+        <property name="matchers">
+            <map>
+                <entry key="excludedPath">
+                    <bean class="org.pac4j.core.matching.ExcludedPathMatcher">
+                        <constructor-arg name="excludePath" value="^/$" />
+                    </bean>
+                </entry>
+            </map>
+        </property>
+    </bean>
+
+    <bean id="casEntryPoint" class="org.pac4j.springframework.security.web.Pac4jEntryPoint">
+        <property name="config" ref="config" />
+        <property name="clientName" value="CasClient" />
+    </bean>
+
+    <bean id="callbackFilter" class="org.pac4j.springframework.security.web.CallbackFilter">
+        <property name="config" ref="config" />
+        <property name="multiProfile" value="true" />
+    </bean>
+
+    <security:http pattern="/**" entry-point-ref="casEntryPoint">
+        <security:csrf disabled="true"/>
+        <security:custom-filter position="BASIC_AUTH_FILTER" ref="callbackFilter" />
+        <security:logout logout-success-url="/" />
+    </security:http>
+</beans>
